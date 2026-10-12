@@ -30,6 +30,7 @@ from django.http import (
     Http404,
     HttpRequest,
     HttpResponse,
+    HttpResponseForbidden,  
     HttpResponseRedirect,
     JsonResponse,
 )
@@ -1461,13 +1462,18 @@ def download_attachment(request):
     import os
 
     rel = request.GET.get("path", "")
-    full = os.path.join(settings.MEDIA_ROOT, rel)
+    media_root = os.path.realpath(settings.MEDIA_ROOT)
+    full = os.path.realpath(os.path.join(media_root, rel))
+
+    # Resolve first, then confirm the result actually stayed inside MEDIA_ROOT.
+    if os.path.commonpath([full, media_root]) != media_root:
+        return HttpResponseForbidden("Invalid path.")
+
     with open(full, "rb") as handle:
         data = handle.read()
     response = HttpResponse(data, content_type="application/octet-stream")
-    response["Content-Disposition"] = f'attachment; filename="{os.path.basename(rel)}"'
+    response["Content-Disposition"] = f'attachment; filename="{os.path.basename(full)}"'
     return response
-
 
 @helpdesk_staff_member_required
 def webhook_test(request):

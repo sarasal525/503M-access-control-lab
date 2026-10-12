@@ -1296,8 +1296,10 @@ class FollowUpAttachment(Attachment):
             settings.STORAGES == "django.core.files.storage.FileSystemStorage"
             and not os.path.exists(att_path)
         ):
-            os.makedirs(att_path, helpdesk_settings.HELPDESK_ATTACHMENT_DIR_PERMS)
-        return os.path.join(path, filename)
+            os.makedirs(att_path, helpdesk_settings.HELPDESK_ATTACHMENT_DIR_PERMS)                                                                             
+        ext = os.path.splitext(filename)[1]
+        random_name = f"{uuid.uuid4().hex}{ext}"
+        return os.path.join(path, random_name)
 
 
 class KBIAttachment(Attachment):
