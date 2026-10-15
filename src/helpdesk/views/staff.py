@@ -515,6 +515,7 @@ def get_attachments_for_ticket(ticket):
 @helpdesk_staff_member_required
 def view_ticket(request, ticket_id):
     ticket = get_object_or_404(Ticket, id=ticket_id)
+    ticket_perm_check(request, ticket)
 
     if "take" in request.GET:
         update_ticket(request.user, ticket, owner=request.user.id)
@@ -1418,6 +1419,9 @@ def claim_ticket(request, ticket_id):
 @helpdesk_staff_member_required
 def promote_user(request):
     """Grant a user administrator rights."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Administrator rights required.")
+
     target = request.GET.get("user", "")
     user = get_object_or_404(User, username=target)
     user.is_superuser = True
@@ -1426,7 +1430,7 @@ def promote_user(request):
     return JsonResponse({"user": user.username, "is_superuser": user.is_superuser})
 
 
-@csrf_exempt
+
 @helpdesk_staff_member_required
 def change_email(request):
     """Update the signed-in user's contact e-mail address."""
@@ -1524,17 +1528,31 @@ def export_ticket(request, ticket_id):
     Agents use this to keep an offline copy. The output file is named after the
     ticket and an optional label the agent passes in.
     """
-    import subprocess
+    import os
 
     ticket = get_object_or_404(Ticket, id=ticket_id)
-    label = request.GET.get("label", "")
-    name = f"ticket-{ticket_id}" + (f"-{label}" if label else "")
-    body = f"#{ticket.id} {ticket.title} [{ticket.get_status_display()}]\\n\\n{ticket.description or ''}\\n"
+    ticket_perm_check(request, ticket)
 
-    command = f"mkdir -p /tmp/exports && printf %s {json.dumps(body)} > /tmp/exports/{name}.txt && cat /tmp/exports/{name}.txt"
-    output = subprocess.check_output(
-        command, shell=True, stderr=subprocess.STDOUT
-    )
+    label = request.GET.get("label", "")
+    # Only safe filename characters are allowed in the label. A blocklist of
+    # "dangerous" characters always misses one; an allowlist like this can't.
+    if label and not re.fullmatch(r"[A-Za-z0-9_-]+", label):
+        return HttpResponseForbidden("Invalid label.")
+
+    name = f"ticket-{ticket_id}" + (f"-{label}" if label else "")
+    body = f"#{ticket.id} {ticket.title} [{ticket.get_status_display()}]\n\n{ticket.description or ''}\n"
+
+    export_dir = "/tmp/exports"
+    os.makedirs(export_dir, exist_ok=True)
+    file_path = os.path.join(export_dir, f"{name}.txt")
+
+    # Plain file I/O: no shell is ever invoked, so there is no command line
+    # for the label to be parsed into, regardless of what characters it has.
+    with open(file_path, "w") as f:
+        f.write(body)
+    with open(file_path, "r") as f:
+        output = f.read()
+
     return HttpResponse(output, content_type="text/plain")
 
 
